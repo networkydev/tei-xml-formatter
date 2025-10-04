@@ -1,3 +1,5 @@
+import { Range } from "vscode";
+
 export type TokenType = 
     | "OpenTagStart" // <
     | "CloseTagStart" // </
@@ -15,6 +17,7 @@ export type TokenType =
     | "Equal" // =
     | "DoubleQuote" // "
     | "SingleQuote" // '
+    | "WhiteSpace" // " "
     | "AttributeValue" // <hi rend="bold"> -> bold
     | "WhiteSpace" // " ", "    "
     | "NewLine" // \n
@@ -24,6 +27,7 @@ export type TokenType =
 export type Token = {
     Name: TokenType;
     Literal: string;
+    Range: Range;
 }
 
 
