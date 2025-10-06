@@ -1,4 +1,4 @@
-import { Range } from "vscode";
+import { Range, TextLine } from "vscode";
 import { Position } from "vscode";
 import { TextDocument } from "vscode";
 import { Token, TokenType } from "./token";
@@ -65,17 +65,32 @@ export class Lexer {
         return { Literal: "", Name: "Attribute", Range: new Range(new Position(0, 0), new Position(0, 0))};
     }
     
-    nextPosition(lineNumber: number, currentPos: number): Range | undefined {
+    nextPosition(pos: Position): Range | undefined {
         // Get the next char on the same line to check if we are at the end of the current line
-        let nextChar: string = this.state.document.getText(new Range(new Position(lineNumber, currentPos + 1), new Position(lineNumber, currentPos + 2)));
+        let nextChar: string = this.state.document.getText(new Range(new Position(pos.line, pos.character + 1), new Position(pos.line, pos.character + 2)));
 
-        if (nextChar === "" && lineNumber + 1 <= this.state.document.lineCount) {
-            return new Range(new Position(lineNumber + 1, 0), new Position(lineNumber + 1, 1));
-        } else if (nextChar === "" && lineNumber + 1 >= this.state.document.lineCount) {
+        if (nextChar === "" && pos.line + 1 < this.state.document.lineCount) {
+            let nextLine = this.nextNonEmptyLine(pos.line + 1);
+            return new Range(new Position(nextLine, 0), new Position(nextLine, 1));
+        } else if (nextChar === "" && pos.line + 1 >= this.state.document.lineCount) {
             return undefined;
         }
 
-        return new Range(new Position(lineNumber, currentPos + 1), new Position(lineNumber, currentPos + 2));
+        return new Range(new Position(pos.line, pos.character + 1), new Position(pos.line, pos.character + 2));
+    }
+
+    /**
+     * Helper method to skip empty lines
+     * @param line Line to start checking from
+     * @returns next linenumber that contains characters
+     */
+    nextNonEmptyLine(line: number): number {
+        let lineObj = this.state.document.lineAt(line);
+        while (lineObj.text === "") {
+            lineObj = this.state.document.lineAt(lineObj.lineNumber + 1);
+        }
+
+        return lineObj.lineNumber;
     }
 
     /**
