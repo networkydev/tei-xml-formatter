@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { XMLParser, XMLBuilder, XMLValidator } from 'fast-xml-parser';
 import { Lexer } from './parser/lexer';
 import { Token } from './parser/token';
 import { json } from 'stream/consumers';
@@ -29,10 +28,6 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
             return; // or throw an error
         }
 
-
-        const parser = new XMLParser();
-        let parsedXML = parser.parse(document.getText(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount - 1, document.lineAt(document.lineCount - 1).range.end.character))));
-        console.log(JSON.stringify(parsedXML, null, 2));
         return;
     }
 }
