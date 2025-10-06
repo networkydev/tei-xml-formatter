@@ -65,12 +65,14 @@ export class Lexer {
         return { Literal: "", Name: "Attribute", Range: new Range(new Position(0, 0), new Position(0, 0))};
     }
     
-    nextPosition(lineNumber: number, currentPos: number): Range {
+    nextPosition(lineNumber: number, currentPos: number): Range | undefined {
         // Get the next char on the same line to check if we are at the end of the current line
         let nextChar: string = this.state.document.getText(new Range(new Position(lineNumber, currentPos + 1), new Position(lineNumber, currentPos + 2)));
 
         if (nextChar === "" && lineNumber + 1 <= this.state.document.lineCount) {
             return new Range(new Position(lineNumber + 1, 0), new Position(lineNumber + 1, 1));
+        } else if (nextChar === "" && lineNumber + 1 >= this.state.document.lineCount) {
+            return undefined;
         }
 
         return new Range(new Position(lineNumber, currentPos + 1), new Position(lineNumber, currentPos + 2));

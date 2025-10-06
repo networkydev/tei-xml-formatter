@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { Lexer } from './parser/lexer';
 
 export class Formatter implements vscode.DocumentFormattingEditProvider {
     /**
@@ -19,15 +20,26 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
         (globalThis as any).Position = vscode.Position;
         (globalThis as any).document = document;
 
-        let firstLine = document.lineAt(0);
-        let tedit: vscode.TextEdit = vscode.TextEdit.delete(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, firstLine.range.end.character)));
-        
-        for (let i = 0; i < document.lineCount; i++) {
-            let line: vscode.TextLine = document.lineAt(i);
-            console.log(line.text);
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage("No active editor found.");
+            return; // or throw an error
         }
-        let arr: vscode.TextEdit[] = [tedit];
 
-        return arr;
+        let lex: Lexer = new Lexer(editor.document);
+        let char: string;
+        let rng: vscode.Range | undefined = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
+        do {
+            if ( rng === undefined ) {
+                vscode.window.showErrorMessage("range is undefined");
+                return;
+            }
+            rng = lex.nextPosition(rng.start.line, rng.start.character);
+            // TODO
+            char = document.getText(rng); // On the last loop through rng becomes undefined and so this method returns the entire text document. Make a better loop
+            console.log(char);
+        } while (rng !== undefined);
+
+        return;
     }
 }
