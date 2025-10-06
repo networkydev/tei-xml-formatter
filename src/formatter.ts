@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
+import { XMLParser, XMLBuilder, XMLValidator } from 'fast-xml-parser';
 import { Lexer } from './parser/lexer';
 import { Token } from './parser/token';
+import { json } from 'stream/consumers';
 
 export class Formatter implements vscode.DocumentFormattingEditProvider {
     /**
@@ -27,25 +29,10 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
             return; // or throw an error
         }
 
-        let lex: Lexer = new Lexer(editor.document);
-        let char: string;
-        let tok: Token | undefined;
 
-        do {
-            tok = lex.nextToken();
-            console.log(tok);
-        } while (tok !== undefined);
-
-        // let rng: vscode.Range | undefined = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
-        // while (rng !== undefined) {
-        //     rng = lex.nextPosition(rng.start);
-
-        //     if (rng === undefined) { break; }
-        //     // TODO
-        //     char = document.getText(rng); // On the last loop through rng becomes undefined and so this method returns the entire text document. Make a better loop
-        //     console.log(char);
-        // } 
-
+        const parser = new XMLParser();
+        let parsedXML = parser.parse(document.getText(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount - 1, document.lineAt(document.lineCount - 1).range.end.character))));
+        console.log(JSON.stringify(parsedXML, null, 2));
         return;
     }
 }
