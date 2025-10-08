@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Lexer } from './parser/lexer';
 import { Token } from './parser/token';
-import { json } from 'saxes';
+import { SaxesParser } from 'saxes';
 import { format } from 'path';
 import { partialDeepStrictEqual } from 'assert';
 
@@ -116,6 +116,7 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
      * @returns a string with numTab number of \t
      */
     tabLines(numTabs: number): string {
+        if (numTabs <= 0) { return ""; }
         let str = "";
         for (let i = 0; i < numTabs; i++) {
             str += "\t";
