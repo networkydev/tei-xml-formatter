@@ -1,29 +1,35 @@
 import * as vscode from 'vscode';
 import { SaxesParser } from 'saxes';
 
-export class Formatter implements vscode.DocumentFormattingEditProvider {
+// Base type node
+type Node =  {
+    type: NodeType;
+    body: string; // The full node as string
+    closed: boolean; // Whether the node end tag has been encountered
+    parent?: Node; // Contains a reference to the parent object, TypeScript does not have a way of finding the parent array form witihn the children array
+    children: Node[]; // Any children the node has
+}
+
+type Tag = Node & {
     /**
-     * helper func to debug, delete in prod
-     * @param charr character number on line 0 to get
-     * @returns a string for the return of getText(), undefined returns ""
+     * Stores the close tag as a string. Is empty if a self closing tag
      */
-    getChar(line: number, charr: number): string {
-        let charia = vscode.window.activeTextEditor?.document.getText(new vscode.Range(new vscode.Position(line, charr), new vscode.Position(line, charr+1))) ?? "";
-        return charia;
-    }
+    closeTag?: string;
+}
 
+type NodeType = "Root" | "XMLDecl" | "DocType" | "PI" | "CData" | "Tag" | "Comment" | "Text";
+
+export class Formatter implements vscode.DocumentFormattingEditProvider {
     provideDocumentFormattingEdits(document: vscode.TextDocument, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
-        // Entire part is to expose stuff to the debug REPL. Delete in prod
-        let getChar = this.getChar;
-        (globalThis as any).vscode = vscode;
-        (globalThis as any).Range = vscode.Range;
-        (globalThis as any).Position = vscode.Position;
-        (globalThis as any).document = document;
+        const root: Node = {
+            type: "Root",
+            body: "",
+            closed: false,
+            // Doesn't have a parent
+            children: []
+        };
 
-        let formatArr: string[] = [];
-        let formatted: string = "";
-        let indent: number = 0;
-        let noIndent = false;
+        const stack: Node[] = [root]; // stack[len() - 1] holds the current parent
 
         const parser = new SaxesParser();
         const he = require("he");
@@ -35,105 +41,108 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
         });
         
         parser.on("xmldecl", dec => { // Always the first line in the XML document
-            formatted += `<?xml version="${dec.version}"${dec.encoding !== undefined ? ` encoding="${dec.encoding}"` : ``}${dec.standalone !== undefined ? ` standalone="${dec.standalone}"` : ``}?>`;
+            const node: Node = {
+                type: "XMLDecl",
+                body: `<?xml version="${dec.version}"${dec.encoding !== undefined ? ` encoding="${dec.encoding}"` : ``}${dec.standalone !== undefined ? ` standalone="${dec.standalone}"` : ``}?>`,
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
+
+            stack[stack.length - 1].children.push(node);
         });
         
         parser.on("doctype", doc => {
-            formatted += `<!DOCTYPE${doc}>`;
+            const node: Node = {
+                type: "DocType",
+                body: `<!DOCTYPE${doc}>`,
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
+
+            stack[stack.length - 1].children.push(node);
         });
         
         parser.on("processinginstruction", pi => {
-            formatted += `${this.tabLines(indent, noIndent)}<?${pi.target}${pi.body !== "" ? ` ${pi.body}` : ``}?>`;
+            const node: Node = {
+                type: "PI",
+                body: `<?${pi.target}${pi.body !== "" ? ` ${pi.body.replace(/[\n\t]/g,"")}` : ``}?>`,
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
+
+            stack[stack.length - 1].children.push(node);
         });
         
         parser.on("cdata", cdata => {
-            formatted += `${this.tabLines(indent, noIndent)}<![CDATA[${cdata}]]>`;
+            const node: Node = {
+                type: "CData",
+                body: `<![CDATA[${cdata}]]>`,
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
+            
+            stack[stack.length - 1].children.push(node);
         });
         
         parser.on("opentag", tag => {
-            let formattedTag = `<${tag.name}`; 
+            const node: Tag = {
+                type: "Tag",
+                body: `<${tag.name}`,
+                closed: false,
+                parent: stack[stack.length - 1],
+                children: []
+            };
 
-            const size = Object.keys(tag.attributes).length;
-
-            if (size === 0) { // Is a regular closing tag
-                if (tag.isSelfClosing) { formattedTag += `/`; }
-                formattedTag += `>`;
-                formatted += `${this.tabLines(indent, noIndent)}${formattedTag}`;
-
-                if (!tag.isSelfClosing && !noIndent) { indent++; }
-                if (tag.name === "p" && !tag.isSelfClosing) {
-                    noIndent = true;
-                }
-                return;
-            }
             for (const key in tag.attributes) {
-                formattedTag += ` ${key}="${tag.attributes[`${key}`]}"`;
+                node.body += ` ${key}="${tag.attributes[`${key}`]}"`;
             }
 
-            if (tag.isSelfClosing) { formattedTag += `/`; }
-            formattedTag += `>`;
-            formatted += `${this.tabLines(indent, noIndent)}${formattedTag}`;
-
-            if (!noIndent) { indent++; }
-            if (tag.name === "p" && !tag.isSelfClosing) {
-                noIndent = true;
+            if (tag.isSelfClosing) {
+                node.closed = true;
+                node.body += "/>";
+            } else {
+                node.body += ">";
             }
+
+            stack[stack.length - 1].children.push(node);
+            !tag.isSelfClosing && stack.push(node); // Node is not yet closed so make it the new parent
         });
         
         parser.on("closetag", tag => {
-            if (tag.name === "p") {
-                console.log("");
-            }
+            if (tag.isSelfClosing) { return; }
+            const node: Tag = stack[stack.length - 1]; // Grab the most recent parent node to close
+            node.closeTag = `</${tag.name}>`;
 
-            if (tag.isSelfClosing) { return; } // This is already taken care of within the opentag handler
-            if (!noIndent) { indent--; }
-            if (tag.name === "p") { 
-                noIndent = false;
-                indent--;
-            }
-            
-            if (formatted.charCodeAt(formatted.length - 1) === 10) { // If newline character at the end
-                formatted += `${this.tabLines(indent, noIndent)}</${tag.name}>`;
-            } else {
-                formatted += `</${tag.name}>`;
-            }
+            stack.pop();
         });
         
         parser.on("comment", comment => {
-            if (formatted.charCodeAt(formatted.length - 1) === 10) { // If newline character at the end
-                formatted += `${this.tabLines(indent, noIndent)}<!--${comment}-->`;
-            } else {
-                formatted += `<!--${comment}-->`;
-            }
+            const node: Node = {
+                type: "Comment",
+                body: `<!--${comment}-->`,
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
+
+            stack[stack.length - 1].children.push(node);
         });
         
         parser.on("text", text => {
-            if (noIndent) {
-                let parsedText = text.replace(/[\t]/g, "");
-                let splitArray = parsedText.split("\n");
-                let temp = formatted;
-                for (let i = 0; i < splitArray.length; i++) {
-                    if (formatted.charCodeAt(formatted.length - 1) === 10) { // If newline character at the end
-                        formatted += `${this.tabLines(indent, false)}${splitArray[i]}${i < splitArray.length - 1 ? `\n` : ``}`;
-                    } else {
-                        formatted += `${splitArray[i]}${i < splitArray.length - 1 ? `\n` : ``}`;
-                    }
-                }
-                temp = formatted;
-                return;
-            }
+            const node: Node = {
+                type: "Text",
+                body: text.replace(/[ \t\n]+/g, " "), // Normalize all spaces to one
+                closed: true,
+                parent: stack[stack.length - 1],
+                children: []
+            };
 
-            let parsedText = text.replace(/[\t]/g, "");
-            if (parsedText === "") { return; }
-            parsedText = he.encode(parsedText);
-            
-            if (formatted.charCodeAt(formatted.length - 1) === 10 || text.charCodeAt(0) === 10) {
-            // if (formatted.substring(formatted.length - 1, formatted.length) === "\n" || text.substring(0, 2) === "\n") {
-                formatted += `${this.tabLines(indent, false)}${parsedText}`;
-            } else {
-                formatted += `${parsedText}`;
-            }
-    });
+            stack[stack.length - 1].children.push(node);
+        });
 
         parser.write(document.getText(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount - 1, document.lineAt(document.lineCount - 1).range.end.character)))).close();
 
@@ -142,26 +151,15 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
             vscode.window.showErrorMessage("No workspace open");
             return;
         }
-        const fileUri = vscode.Uri.joinPath(folder.uri, "formatted.xml");
-        vscode.workspace.fs.writeFile(fileUri, Buffer.from(formatted, "utf8"));
+        
+        const fileUri = vscode.Uri.joinPath(folder.uri, "formatted.json");
+        vscode.workspace.fs.writeFile(fileUri, Buffer.from(JSON.stringify(root, (key, value) => {
+            if (key === "parent") { return undefined; } // skip parent to avoid circular refs
+            return value;
+            }, 2), "utf8"));
 
         // console.log(JSON.stringify(formatted));
 
         return;
-    }
-
-    /**
-     * Helper function to insert the correct nubmer of indents
-     * @param numTabs Number of tabs to retun
-     * @returns a string with numTab number of \t
-     */
-    tabLines(numTabs: number, noIndent: boolean): string {
-        if (numTabs <= 0 || noIndent) { return ""; }
-        let str = "";
-        for (let i = 0; i < numTabs; i++) {
-            str += "\t";
-        }
-
-        return str;
     }
 }
