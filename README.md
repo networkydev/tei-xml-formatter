@@ -1,6 +1,6 @@
 ## Important
 
-This project is udner active development and is not ready for use.
+This project is under active development and is not ready for use.
 
 ## What is this?
 

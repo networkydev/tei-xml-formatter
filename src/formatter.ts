@@ -1,3 +1,14 @@
+/*
+    Node class
+    just a text 
+
+
+    Thoughts:
+    There is no ned for the node class to even have a concept of anything XML related. It only needs to know of token groups
+
+*/
+
+
 import * as vscode from 'vscode';
 import { SaxesParser } from 'saxes';
 
@@ -135,7 +146,8 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
         parser.on("text", text => {
             const node: Node = {
                 type: "Text",
-                body: text.replace(/[ \t\n]+/g, " "), // Normalize all spaces to one
+                // body: text.replace(/[ \t\n]+/g, " "), // Normalize all spaces to one
+                body: text,
                 closed: true,
                 parent: stack[stack.length - 1],
                 children: []
