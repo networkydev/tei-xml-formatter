@@ -4,10 +4,10 @@ abstract class Node {
   abstract width() : number
 }
 
-class Group extends Node {
+export class Group extends Node {
   public kind = "Group" as const;
 
-  constructor(public readonly nodes: Node[]) {
+  constructor(public nodes: Node[]) {
     super();
   }
 
@@ -22,7 +22,7 @@ class Group extends Node {
   }
 }
 
-class Text extends Node {
+export class Text extends Node {
   public kind = "Text" as const;
 
   constructor(public readonly text: string) {
@@ -34,7 +34,7 @@ class Text extends Node {
   }
 }
 
-class SpaceOrLine extends Node {
+export class SpaceOrLine extends Node {
   public kind = "SpaceOrLine" as const;
 
   constructor() {

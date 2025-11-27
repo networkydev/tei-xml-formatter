@@ -1,162 +1,156 @@
-/*
-    Node class
-    just a text 
-
-
-    Thoughts:
-    There is no ned for the node class to even have a concept of anything XML related. It only needs to know of token groups
-
-*/
-
-
 import * as vscode from 'vscode';
 import { SaxesParser } from 'saxes';
-
-// Base type node
-type Node =  {
-    type: NodeType;
-    body: string; // The full node as string
-    closed: boolean; // Whether the node end tag has been encountered
-    parent?: Node; // Contains a reference to the parent object, TypeScript does not have a way of finding the parent array form witihn the children array
-    children: Node[]; // Any children the node has
-}
-
-type Tag = Node & {
-    /**
-     * Stores the close tag as a string. Is empty if a self closing tag
-     */
-    closeTag?: string;
-}
-
-type NodeType = "Root" | "XMLDecl" | "DocType" | "PI" | "CData" | "Tag" | "Comment" | "Text";
+import { Group, Text, SpaceOrLine } from './types/Nodes';
+import { parse } from 'path';
 
 export class Formatter implements vscode.DocumentFormattingEditProvider {
     provideDocumentFormattingEdits(document: vscode.TextDocument, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
-        const root: Node = {
-            type: "Root",
-            body: "",
-            closed: false,
-            // Doesn't have a parent
-            children: []
-        };
-
-        const stack: Node[] = [root]; // stack[len() - 1] holds the current parent
-
         const parser = new SaxesParser();
         const he = require("he");
 
+        /**
+         * The document as a formatting tree
+         */
+        let root: Group = new Group([]);
+        let parentStack: Group[] = [root];
+        
+
         parser.on("error", function (e) {
             console.error(e);
-            vscode.window.showErrorMessage("Error: " + e.message);
+            vscode.window.showErrorMessage("Error: " + e.message); // TODO: Make better
             return;
         });
         
         parser.on("xmldecl", dec => { // Always the first line in the XML document
-            const node: Node = {
-                type: "XMLDecl",
-                body: `<?xml version="${dec.version}"${dec.encoding !== undefined ? ` encoding="${dec.encoding}"` : ``}${dec.standalone !== undefined ? ` standalone="${dec.standalone}"` : ``}?>`,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            let grp: Group = new Group([new Text("<?xml")]);
 
-            stack[stack.length - 1].children.push(node);
+            if (dec.version !== undefined) {
+                grp.nodes.push(new SpaceOrLine());
+                grp.nodes.push(new Text(`version="${dec.version}"`));
+            }
+
+            if (dec.encoding !== undefined) {
+                grp.nodes.push(new SpaceOrLine());
+                grp.nodes.push(new Text(`encoding="${dec.encoding}"`));
+            }
+
+            if (dec.standalone !== undefined) {
+                grp.nodes.push(new SpaceOrLine());
+                grp.nodes.push(new Text(`standalone="${dec.standalone}"`));
+            }
+
+            grp.nodes.push(new Text("?>"));
+
+            root.nodes.push(grp);
         });
         
         parser.on("doctype", doc => {
-            const node: Node = {
-                type: "DocType",
-                body: `<!DOCTYPE${doc}>`,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            // TODO: make sure that the doc string has the space between DOCTYPE and the body
+            // TODO: Actually push this into the tree
 
-            stack[stack.length - 1].children.push(node);
+            let text: Text = new Text(`<!DOCTYPE${doc}>`); // Ignoring wrapping for now
         });
         
         parser.on("processinginstruction", pi => {
-            const node: Node = {
-                type: "PI",
-                body: `<?${pi.target}${pi.body !== "" ? ` ${pi.body.replace(/[\n\t]/g,"")}` : ``}?>`,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            // TODO
+            // const node: Node = {
+            //     type: "PI",
+            //     body: `<?${pi.target}${pi.body !== "" ? ` ${pi.body.replace(/[\n\t]/g,"")}` : ``}?>`,
+            //     closed: true,
+            //     parent: stack[stack.length - 1],
+            //     children: []
+            // };
 
-            stack[stack.length - 1].children.push(node);
+            // stack[stack.length - 1].children.push(node);
         });
         
         parser.on("cdata", cdata => {
-            const node: Node = {
-                type: "CData",
-                body: `<![CDATA[${cdata}]]>`,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            // TODO
+            // const node: Node = {
+            //     type: "CData",
+            //     body: `<![CDATA[${cdata}]]>`,
+            //     closed: true,
+            //     parent: stack[stack.length - 1],
+            //     children: []
+            // };
             
-            stack[stack.length - 1].children.push(node);
+            // stack[stack.length - 1].children.push(node);
         });
         
         parser.on("opentag", tag => {
-            const node: Tag = {
-                type: "Tag",
-                body: `<${tag.name}`,
-                closed: false,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            /*
+                On opening a new tag push it's group to the stack
+                <tag> text text <tag1> </tag1> </tag>
+            */
+
+            let grp: Group = new Group([]);
+            let body: string = `<${tag.name}`;
 
             for (const key in tag.attributes) {
-                node.body += ` ${key}="${tag.attributes[`${key}`]}"`;
+                body += ` ${key}="${tag.attributes[`${key}`]}"`;
             }
 
             if (tag.isSelfClosing) {
-                node.closed = true;
-                node.body += "/>";
+                body += "/>";
             } else {
-                node.body += ">";
+                body += ">";
             }
 
-            stack[stack.length - 1].children.push(node);
-            !tag.isSelfClosing && stack.push(node); // Node is not yet closed so make it the new parent
+            grp.nodes.push(new Text(body));
+            parentStack[parentStack.length - 1].nodes.push(grp);
+            !tag.isSelfClosing && parentStack.push(grp);
         });
         
         parser.on("closetag", tag => {
-            if (tag.isSelfClosing) { return; }
-            const node: Tag = stack[stack.length - 1]; // Grab the most recent parent node to close
-            node.closeTag = `</${tag.name}>`;
+            if (tag.isSelfClosing) { return; } // Already handled in open tag call
 
-            stack.pop();
+            const parent = parentStack[parentStack.length - 1];
+            parent.nodes.push(new Text(`</${tag.name}>`));
+            parentStack.pop();
         });
         
         parser.on("comment", comment => {
-            const node: Node = {
-                type: "Comment",
-                body: `<!--${comment}-->`,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            // TODO
+            // const node: Node = {
+            //     type: "Comment",
+            //     body: `<!--${comment}-->`,
+            //     closed: true,
+            //     parent: stack[stack.length - 1],
+            //     children: []
+            // };
 
-            stack[stack.length - 1].children.push(node);
+            // stack[stack.length - 1].children.push(node);
         });
         
         parser.on("text", text => {
-            const node: Node = {
-                type: "Text",
-                // body: text.replace(/[ \t\n]+/g, " "), // Normalize all spaces to one
-                body: text,
-                closed: true,
-                parent: stack[stack.length - 1],
-                children: []
-            };
+            let parsed: string = text.replace(/[ \t\n]+/g, " ");
+            const parent = parentStack[parentStack.length - 1];
 
-            stack[stack.length - 1].children.push(node);
+            if (parsed === " ") {
+                parent.nodes.push(new SpaceOrLine);
+                return;
+            }
+
+            parent.nodes.push(new Text(parsed));
+
+            // const node: Node = {
+            //     type: "Text",
+            //     // body: text.replace(/[ \t\n]+/g, " "), // Normalize all spaces to one
+            //     body: text,
+            //     closed: true,
+            //     parent: stack[stack.length - 1],
+            //     children: []
+            // };
+
+            // stack[stack.length - 1].children.push(node);
         });
 
         parser.write(document.getText(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount - 1, document.lineAt(document.lineCount - 1).range.end.character)))).close();
+
+        // console.log(JSON.stringify(parentStack, (key, value) => {
+        //     if (key === "parent") { return undefined; } // skip parent to avoid circular refs
+        //     return value;
+        //     }, 2));
 
         const folder = vscode.workspace.workspaceFolders?.[0];
         if (!folder) {
@@ -169,8 +163,6 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
             if (key === "parent") { return undefined; } // skip parent to avoid circular refs
             return value;
             }, 2), "utf8"));
-
-        // console.log(JSON.stringify(formatted));
 
         return;
     }
