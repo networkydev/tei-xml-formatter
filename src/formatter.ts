@@ -121,7 +121,7 @@ export class Formatter implements vscode.DocumentFormattingEditProvider {
         parser.on("text", text => {
             let parsed: string = text.replace(/[ \t\n]+/g, " ");
 
-            if (parsed === " ") {
+            if (parsed === " " && root.nodes[root.nodes.length - 1].kind !== "SpaceOrLine") {
                 root.nodes.push(new SpaceOrLine);
                 return;
             }
